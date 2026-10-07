@@ -31,6 +31,8 @@ import com.pyamsoft.tetherfi.server.proxy.session.netty.SuspendingNettyDelegatin
 import com.pyamsoft.tetherfi.server.proxy.session.netty.handler.channel.ChannelCreator
 import com.pyamsoft.tetherfi.server.proxy.session.netty.handler.channel.TcpChannelCreator
 import com.pyamsoft.tetherfi.server.proxy.session.netty.handler.channel.UdpChannelCreator
+import com.pyamsoft.tetherfi.server.proxy.session.netty.handler.selfserve.DefaultSelfServeResponder
+import com.pyamsoft.tetherfi.server.proxy.session.netty.handler.selfserve.SelfServeResponder
 import io.netty.channel.Channel
 import io.netty.channel.ChannelFuture
 import io.netty.channel.ChannelHandler
@@ -118,6 +120,9 @@ private data class TestChannelCreator(
       )
 }
 
+/** The real documents, so tests also notice a template that goes missing from the resources */
+internal val TEST_SELF_SERVE: SelfServeResponder = DefaultSelfServeResponder(appVersion = "test")
+
 internal object TestSetup {
 
   @CheckResult
@@ -136,6 +141,7 @@ internal object TestSetup {
       val resolver: ClientResolver,
       val serverSocketTimeout: ServerSocketTimeout,
       val dispatchers: AppDispatchers,
+      val selfServe: SelfServeResponder,
       val provideTcpChannelCreator: () -> ChannelCreator,
       val provideUdpChannelCreator: () -> ChannelCreator,
   )
@@ -226,6 +232,7 @@ internal object TestSetup {
                     resolver = resolver,
                     serverSocketTimeout = ServerSocketTimeout.Defaults.BALANCED,
                     dispatchers = dispatchers,
+                    selfServe = TEST_SELF_SERVE,
                     provideTcpChannelCreator = {
                       tcpSocketCreator.wrap { onTcpChannelCreated(it) }
                     },
@@ -309,6 +316,7 @@ internal object TestSetup {
             isHttpEnabled = true,
             isSocksEnabled = true,
             serverSocketTimeout = ServerSocketTimeout.Defaults.BALANCED,
+            selfServe = TEST_SELF_SERVE,
             dispatchers = dispatchers,
             onOpened = { openCount.inc() },
             onClosing = { closingCount.inc() },

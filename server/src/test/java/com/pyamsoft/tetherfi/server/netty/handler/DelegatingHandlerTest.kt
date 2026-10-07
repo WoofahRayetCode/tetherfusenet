@@ -61,6 +61,7 @@ class DelegatingHandlerTest {
             allowedClients = factoryParams.allowed,
             blockedClients = factoryParams.blocked,
             clientResolver = factoryParams.resolver,
+            selfServe = factoryParams.selfServe,
             dispatchers = factoryParams.dispatchers,
         )
 

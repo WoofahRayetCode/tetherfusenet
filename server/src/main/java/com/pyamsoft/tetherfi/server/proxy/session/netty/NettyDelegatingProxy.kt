@@ -29,6 +29,7 @@ import com.pyamsoft.tetherfi.server.proxy.session.netty.handler.ProtocolDelegati
 import com.pyamsoft.tetherfi.server.proxy.session.netty.handler.channel.ChannelCreator
 import com.pyamsoft.tetherfi.server.proxy.session.netty.handler.channel.TcpChannelCreator
 import com.pyamsoft.tetherfi.server.proxy.session.netty.handler.channel.UdpChannelCreator
+import com.pyamsoft.tetherfi.server.proxy.session.netty.handler.selfserve.SelfServeResponder
 import io.netty.channel.Channel
 import io.netty.channel.EventLoopGroup
 import io.netty.channel.socket.SocketChannel
@@ -49,6 +50,7 @@ internal constructor(
     private val isHttpEnabled: Boolean,
     private val isSocksEnabled: Boolean,
     private val serverSocketTimeout: ServerSocketTimeout,
+    private val selfServe: SelfServeResponder,
     dispatchers: AppDispatchers,
     onOpened: () -> Unit,
     onClosing: () -> Unit,
@@ -77,6 +79,7 @@ internal constructor(
           isHttpEnabled = isHttpEnabled,
           serverSocketTimeout = serverSocketTimeout,
           clientResolver = clientResolver,
+          selfServe = selfServe,
           dispatchers = dispatchers,
       )
 

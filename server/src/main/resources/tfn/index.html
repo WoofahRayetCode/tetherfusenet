@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>TetherFuseNet connection assistant</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        font-family: system-ui, sans-serif;
+      }
+      body {
+        max-width: 46rem;
+        margin: 2rem auto;
+        padding: 0 1rem;
+        line-height: 1.5;
+      }
+      pre {
+        padding: 0.75rem;
+        overflow-x: auto;
+        border: 1px solid #8884;
+        border-radius: 0.5rem;
+      }
+      code {
+        font-family: ui-monospace, monospace;
+      }
+      .warn {
+        padding: 0.75rem 1rem;
+        border: 1px solid #c60;
+        border-radius: 0.5rem;
+      }
+      nav button {
+        margin-right: 0.5rem;
+      }
+      [hidden] {
+        display: none;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>TetherFuseNet</h1>
+    <p>
+      This page is served by your phone (<code>@@HOST@@</code>, version
+      <code>@@VERSION@@</code>), so it works without any proxy settings.
+    </p>
+
+    <div class="warn" id="socks-off" hidden>
+      <strong>SOCKS is turned off in TetherFuseNet.</strong> Option 1 needs it. On the phone, stop the
+      Hotspot, turn on the <em>SOCKS4A/SOCKS5H Proxy</em> switch under <em>Proxy Mode</em> in the Hotspot
+      tab, start the Hotspot again, then reload this page.
+    </div>
+
+    <h2>Option 1: the whole computer, no proxy settings</h2>
+    <p>
+      Every application, DNS and UDP (QUIC, voice, games) go through your phone, and through the VPN
+      on your phone if it has one. You need <a href="https://sing-box.sagernet.org/">sing-box</a>
+      1.14 or newer, installed once. The script below is short, read it before you run it. Press
+      Ctrl+C to disconnect.
+    </p>
+    <nav>
+      <button type="button" data-os="linux">Linux</button>
+      <button type="button" data-os="macos">macOS</button>
+      <button type="button" data-os="windows">Windows</button>
+    </nav>
+
+    <section data-os="linux" hidden>
+      <pre><code># Arch / CachyOS. Other distributions: https://sing-box.sagernet.org/installation/package-manager/
+sudo pacman -S sing-box
+curl -fsS http://@@HOST@@:@@PORT@@/connect.sh -o tfn-connect.sh
+less tfn-connect.sh
+sudo sh tfn-connect.sh</code></pre>
+    </section>
+    <section data-os="macos" hidden>
+      <pre><code>brew install sing-box
+curl -fsS http://@@HOST@@:@@PORT@@/connect.sh -o tfn-connect.sh
+less tfn-connect.sh
+sudo sh tfn-connect.sh</code></pre>
+    </section>
+    <section data-os="windows" hidden>
+      <p>In an <strong>Administrator</strong> PowerShell:</p>
+      <pre><code>winget install SagerNet.sing-box
+# open a NEW administrator PowerShell so sing-box is on the PATH, then:
+Invoke-WebRequest -UseBasicParsing http://@@HOST@@:@@PORT@@/connect.ps1 -OutFile tfn-connect.ps1
+notepad tfn-connect.ps1
+powershell -ExecutionPolicy Bypass -File .\tfn-connect.ps1</code></pre>
+    </section>
+    <p>
+      <code>ping</code> does not work through the phone (it is neither TCP nor UDP). Web pages, SSH, git,
+      downloads, video calls and games do. If UDP misbehaves (a call, a game, QUIC), add
+      <code>--tcp-only</code> to the script (<code>-TcpOnly</code> on Windows): UDP is turned away,
+      applications fall back to TCP, and DNS keeps working.
+    </p>
+
+    <h2>Option 2: only applications that read the system proxy settings</h2>
+    <ul>
+      <li>Automatic configuration script: <code>http://@@HOST@@:@@PORT@@/proxy.pac</code></li>
+      <li>Or enter by hand: <code>@@HOST@@</code>, port <code>@@PORT@@</code> (HTTP proxy and SOCKS5 share this port when both are on).</li>
+    </ul>
+
+    <h2>Files on this phone</h2>
+    <ul>
+      <li><a href="/tfn.json">/tfn.json</a> what this phone offers</li>
+      <li><a href="/sing-box.json">/sing-box.json</a> sing-box config</li>
+      <li><a href="/connect.sh">/connect.sh</a> Linux and macOS script</li>
+      <li><a href="/connect.ps1">/connect.ps1</a> Windows script</li>
+      <li><a href="/proxy.pac">/proxy.pac</a> proxy auto-config</li>
+    </ul>
+
+    <script>
+      (function () {
+        var socksOn = @@SOCKS_JS@@;
+        var ua = navigator.userAgent || "";
+        var detected = /Windows/i.test(ua) ? "windows" : /Macintosh|Mac OS X/i.test(ua) ? "macos" : "linux";
+
+        function show(os) {
+          var sections = document.querySelectorAll("section[data-os]");
+          for (var i = 0; i < sections.length; i++) {
+            sections[i].hidden = sections[i].getAttribute("data-os") !== os;
+          }
+        }
+
+        var buttons = document.querySelectorAll("nav button");
+        for (var i = 0; i < buttons.length; i++) {
+          buttons[i].addEventListener("click", function () {
+            show(this.getAttribute("data-os"));
+          });
+        }
+
+        document.getElementById("socks-off").hidden = socksOn;
+        show(detected);
+      })();
+    </script>
+  </body>
+</html>

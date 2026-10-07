@@ -34,7 +34,10 @@ import io.netty.handler.codec.http.HttpMethod
 import io.netty.handler.codec.http.HttpVersion
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
+import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.delay
 import org.junit.Test
 
 class Http1HandlerTest {
@@ -69,8 +72,23 @@ class Http1HandlerTest {
             blockedClients = factory.blocked,
             dispatchers = factory.dispatchers,
             tcpSocketCreator = capturingTcpSocketCreator,
+            selfServe = factory.selfServe,
+            isHttpProxyEnabled = factory.isHttpEnabled,
+            isSocksEnabled = factory.isSocksEnabled,
         )
     return factory.create(Unit)
+  }
+
+  /**
+   * The outbound channel is registered on a Netty event loop after the handler returns, so it is
+   * not there the instant the request has been handled.
+   */
+  private suspend fun awaitChannel(channel: () -> Channel?): Channel? {
+    val deadline = System.nanoTime() + CHANNEL_WAIT_NANOS
+    while (channel() == null && System.nanoTime() < deadline) {
+      delay(CHANNEL_POLL)
+    }
+    return channel()
   }
 
   private suspend fun CoroutineScope.assertForwardedTo(
@@ -174,7 +192,7 @@ class Http1HandlerTest {
       }
 
       // A TCP outbound has been created
-      assertNotNull(tcpConnection)
+      assertNotNull(awaitChannel { tcpConnection })
     }
   }
 
@@ -217,7 +235,7 @@ class Http1HandlerTest {
       }
 
       // A TCP outbound has been created
-      assertNotNull(tcpConnection)
+      assertNotNull(awaitChannel { tcpConnection })
     }
   }
 
@@ -272,5 +290,10 @@ class Http1HandlerTest {
         expectedPort = 8123,
         expectedPath = "/this/here.json?query=string",
     )
+  }
+
+  private companion object {
+    val CHANNEL_WAIT_NANOS = 3.seconds.inWholeNanoseconds
+    val CHANNEL_POLL = 10.milliseconds
   }
 }

@@ -27,6 +27,7 @@ import com.pyamsoft.tetherfi.server.clients.BlockedClients
 import com.pyamsoft.tetherfi.server.clients.ClientResolver
 import com.pyamsoft.tetherfi.server.proxy.session.netty.handler.channel.ChannelCreator
 import com.pyamsoft.tetherfi.server.proxy.session.netty.handler.http.Http1ProxyHandler
+import com.pyamsoft.tetherfi.server.proxy.session.netty.handler.selfserve.SelfServeResponder
 import com.pyamsoft.tetherfi.server.proxy.session.netty.handler.socks.Socks4ProxyHandler
 import com.pyamsoft.tetherfi.server.proxy.session.netty.handler.socks.Socks5ProxyHandler
 import io.netty.buffer.ByteBuf
@@ -55,6 +56,7 @@ private constructor(
     private val tcpSocketCreator: ChannelCreator,
     // IF this is NULL, SOCKS is not enabled
     private val udpSocketCreator: ChannelCreator?,
+    private val selfServe: SelfServeResponder,
     blockedClients: BlockedClients,
 ) : ByteToMessageDecoder() {
 
@@ -66,6 +68,9 @@ private constructor(
           blockedClients = blockedClients,
           tcpSocketCreator = tcpSocketCreator,
           serverSocketTimeout = serverSocketTimeout,
+          selfServe = selfServe,
+          isHttpProxyEnabled = isHttpEnabled,
+          isSocksEnabled = udpSocketCreator != null,
           dispatchers = dispatchers,
       )
 
@@ -188,8 +193,12 @@ private constructor(
         }
 
         else -> {
-          if (!isHttpEnabled) {
-            Timber.w { "DROP: HTTP traffic received but HTTP was not enabled" }
+          // With only SOCKS turned on, this port still answers HTTP requests that are for the
+          // device
+          // itself (setup help for a computer that has no proxy settings), see [Http1ProxyHandler].
+          // Anything that would be relayed is refused there.
+          if (!isHttpEnabled && udpSocketCreator == null) {
+            Timber.w { "DROP: HTTP traffic received but nothing was enabled" }
             ctx.close()
             return
           }
@@ -240,6 +249,7 @@ private constructor(
         allowedClients: AllowedClients,
         blockedClients: BlockedClients,
         clientResolver: ClientResolver,
+        selfServe: SelfServeResponder,
         dispatchers: AppDispatchers,
         isDebug: Boolean,
     ): HandlerFactory<Params> {
@@ -257,6 +267,7 @@ private constructor(
 
             // IF this is NULL, SOCKS is not enabled
             udpSocketCreator = params.udp,
+            selfServe = selfServe,
         )
       }
     }

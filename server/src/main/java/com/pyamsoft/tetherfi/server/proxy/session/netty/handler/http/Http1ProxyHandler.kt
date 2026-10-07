@@ -37,11 +37,15 @@ import com.pyamsoft.tetherfi.server.proxy.session.netty.handler.applyBandwidthLi
 import com.pyamsoft.tetherfi.server.proxy.session.netty.handler.channel.ChannelCreator
 import com.pyamsoft.tetherfi.server.proxy.session.netty.handler.dropHandler
 import com.pyamsoft.tetherfi.server.proxy.session.netty.handler.flushAndClose
+import com.pyamsoft.tetherfi.server.proxy.session.netty.handler.selfserve.SelfServeRequest
+import com.pyamsoft.tetherfi.server.proxy.session.netty.handler.selfserve.SelfServeResponder
+import com.pyamsoft.tetherfi.server.proxy.session.netty.handler.selfserve.SelfServeResponse
 import com.pyamsoft.tetherfi.server.proxy.session.port
 import io.netty.buffer.Unpooled
 import io.netty.channel.Channel
 import io.netty.channel.ChannelHandlerContext
 import io.netty.handler.codec.http.DefaultFullHttpResponse
+import io.netty.handler.codec.http.FullHttpResponse
 import io.netty.handler.codec.http.HttpClientCodec
 import io.netty.handler.codec.http.HttpContent
 import io.netty.handler.codec.http.HttpHeaderNames
@@ -68,6 +72,10 @@ private constructor(
     private val allowedClients: AllowedClients,
     private val blockedClients: BlockedClients,
     private val tcpSocketCreator: ChannelCreator,
+    private val selfServe: SelfServeResponder,
+    // If false, HTTP requests are not relayed, only requests for this device itself are answered
+    private val isHttpProxyEnabled: Boolean,
+    private val isSocksEnabled: Boolean,
     dispatchers: AppDispatchers,
 ) :
     ProxyHandler(
@@ -90,6 +98,9 @@ private constructor(
   private val messageQueue = mutableListOf<Any>()
 
   private var outboundChannel: Channel? = null
+
+  // Once the proxy has answered a request by itself, the rest of that request is not for anyone
+  private var isAnsweredLocally = false
 
   private fun assignOutboundChannel(channel: Channel) {
     outboundChannel?.let { old ->
@@ -145,6 +156,185 @@ private constructor(
         HttpResponseStatus.BAD_GATEWAY,
         Unpooled.EMPTY_BUFFER,
     )
+  }
+
+  /**
+   * If this request is addressed to the proxy itself, and not to a remote server it should relay
+   * to, returns the path that was asked for.
+   *
+   * This is what a computer with no proxy settings sends when it opens the address of this device.
+   * A browser that DOES use this proxy asks for the same thing with a full URL.
+   */
+  @CheckResult
+  private fun resolveSelfServePath(ctx: ChannelHandlerContext, msg: HttpRequest): String? {
+    val local = ctx.channel().localAddress().cast<InetSocketAddress>() ?: return null
+    val uri = msg.uri()
+
+    val parsed =
+        parseUriAndPort(
+            uri = uri,
+            defaultPort = PORT_HTTP,
+            resolveHostHeader = { msg.headers().get(HttpHeaderNames.HOST).orEmpty() },
+        )
+    if (parsed == null) {
+      // "GET /path" with no Host header at all can only be meant for this device
+      return if (uri.startsWith("/")) uri else null
+    }
+
+    val isSelf =
+        parsed.resolvedPort == local.port &&
+            parsed.resolvedHostName.equals(local.address.hostAddress, ignoreCase = true)
+    return if (isSelf) parsed.proxyCorrectedFilePath else null
+  }
+
+  @CheckResult
+  private fun createSelfServeResponse(
+      isHeadRequest: Boolean,
+      document: SelfServeResponse,
+  ): FullHttpResponse {
+    val bytes = document.body.toByteArray(Charsets.UTF_8)
+
+    val response =
+        DefaultFullHttpResponse(
+            HttpVersion.HTTP_1_1,
+            HttpResponseStatus.valueOf(document.status),
+            // A HEAD response says how long the body would be but does not have one
+            if (isHeadRequest) Unpooled.EMPTY_BUFFER else Unpooled.wrappedBuffer(bytes),
+        )
+
+    response
+        .headers()
+        .set(HttpHeaderNames.CONTENT_TYPE, document.contentType)
+        .set(HttpHeaderNames.CONTENT_LENGTH, bytes.size)
+        .set(HttpHeaderNames.CACHE_CONTROL, HttpHeaderValues.NO_STORE)
+        .set(HttpHeaderNames.CONNECTION, HttpHeaderValues.CLOSE)
+        .set(HEADER_NO_SNIFF, "nosniff")
+        .set(HEADER_REFERRER_POLICY, "no-referrer")
+
+    if (document.contentType.startsWith(CONTENT_TYPE_HTML)) {
+      // The page only needs its own inline style and script, nothing may be loaded from anywhere
+      response.headers().set(HttpHeaderNames.CONTENT_SECURITY_POLICY, SELF_SERVE_HTML_POLICY)
+    }
+
+    return response
+  }
+
+  @CheckResult
+  private fun createSelfServeRefusal(status: HttpResponseStatus): FullHttpResponse {
+    val response = DefaultFullHttpResponse(HttpVersion.HTTP_1_1, status, Unpooled.EMPTY_BUFFER)
+    response
+        .headers()
+        .set(HttpHeaderNames.CONTENT_LENGTH, 0)
+        .set(HttpHeaderNames.CONNECTION, HttpHeaderValues.CLOSE)
+
+    if (status == HttpResponseStatus.METHOD_NOT_ALLOWED) {
+      response.headers().set(HttpHeaderNames.ALLOW, "GET, HEAD")
+    }
+    return response
+  }
+
+  /** Only reading is allowed, and only HEAD says how long the document is without sending it */
+  @CheckResult
+  private fun answerSelfServe(
+      method: HttpMethod,
+      path: String,
+      local: InetSocketAddress,
+  ): FullHttpResponse {
+    val isHeadRequest = method == HttpMethod.HEAD
+    if (method != HttpMethod.GET && !isHeadRequest) {
+      return createSelfServeRefusal(HttpResponseStatus.METHOD_NOT_ALLOWED)
+    }
+
+    val document =
+        selfServe.respond(
+            path = path,
+            request =
+                SelfServeRequest(
+                    host = local.address.hostAddress.orEmpty(),
+                    port = local.port,
+                    isHttpEnabled = isHttpProxyEnabled,
+                    isSocksEnabled = isSocksEnabled,
+                    idleTimeoutSeconds = idleTimeoutSeconds(),
+                ),
+        )
+    return createSelfServeResponse(isHeadRequest = isHeadRequest, document = document)
+  }
+
+  private fun handleSelfServe(
+      ctx: ChannelHandlerContext,
+      channelId: String,
+      msg: HttpRequest,
+      path: String,
+  ) {
+    val tag = "SELF-SERVE"
+
+    val local = ctx.channel().localAddress().cast<InetSocketAddress>()
+    if (local == null) {
+      Timber.w { "($channelId) DROP: $tag local address is NULL" }
+      sendErrorAndClose(ctx, msg)
+      return
+    }
+
+    val client = getTetherClient(ctx)
+    if (client == null) {
+      Timber.w { "($channelId) DROP: $tag TetherClient is NULL" }
+      sendErrorAndClose(ctx, msg)
+      return
+    }
+
+    // If the client is blocked we do not process any input
+    if (blockedClients.isBlocked(client)) {
+      Timber.w { "($channelId) DROP: $tag client was blocked: $client" }
+      sendErrorAndClose(ctx, msg)
+      return
+    }
+
+    scope.launch(context = dispatchers.io) { allowedClients.seen(client) }
+
+    val method = msg.method()
+    val response = answerSelfServe(method = method, path = path, local = local)
+
+    Timber.d { "($channelId) $tag $method $path" }
+
+    isAnsweredLocally = true
+    ReferenceCountUtil.release(msg)
+    ctx.writeAndFlush(response).addListener { closeChannels(ctx) }
+  }
+
+  /** Seconds a connection may sit idle before it is closed, 0 if it never is */
+  @CheckResult
+  private fun idleTimeoutSeconds(): Long {
+    val timeout = serverSocketTimeout.timeoutDuration
+    return if (timeout.isInfinite()) 0L else timeout.inWholeSeconds
+  }
+
+  /**
+   * Netty could not read this as HTTP at all. A TLS handshake sent to this port ends up here too: a
+   * browser that was told to use https:// for this device.
+   */
+  private fun handleBadRequest(ctx: ChannelHandlerContext, channelId: String, msg: HttpRequest) {
+    Timber.w { "($channelId) DROP: Not a readable HTTP request: ${msg.decoderResult()}" }
+
+    isAnsweredLocally = true
+    ReferenceCountUtil.release(msg)
+    ctx.writeAndFlush(createSelfServeRefusal(HttpResponseStatus.BAD_REQUEST)).addListener {
+      closeChannels(ctx)
+    }
+  }
+
+  /** This port only answers requests for the device itself when HTTP proxying is turned off */
+  private fun handleHttpProxyDisabled(
+      ctx: ChannelHandlerContext,
+      channelId: String,
+      msg: HttpRequest,
+  ) {
+    Timber.w { "($channelId) DROP: HTTP traffic received but HTTP was not enabled" }
+
+    isAnsweredLocally = true
+    ReferenceCountUtil.release(msg)
+    ctx.writeAndFlush(createSelfServeRefusal(HttpResponseStatus.FORBIDDEN)).addListener {
+      closeChannels(ctx)
+    }
   }
 
   @LintIgnoreLongMethod
@@ -554,7 +744,26 @@ private constructor(
 
     when (msg) {
       is HttpRequest -> {
-        if (msg.method() == HttpMethod.CONNECT) {
+        if (isAnsweredLocally) {
+          // Already answered and closing, a pipelined request behind it is for nobody
+          ReferenceCountUtil.release(msg)
+          return
+        }
+
+        if (msg.decoderResult().isFailure) {
+          handleBadRequest(ctx, channelId, msg)
+          return
+        }
+
+        val isConnect = msg.method() == HttpMethod.CONNECT
+
+        // A request for this device itself is never relayed anywhere, CONNECT included
+        val selfServePath = if (isConnect) null else resolveSelfServePath(ctx, msg)
+        if (selfServePath != null) {
+          handleSelfServe(ctx, channelId, msg, selfServePath)
+        } else if (!isHttpProxyEnabled) {
+          handleHttpProxyDisabled(ctx, channelId, msg)
+        } else if (isConnect) {
           handleHttpsConnect(ctx, channelId, msg)
         } else {
           handleHttpForward(ctx, channelId, msg)
@@ -562,9 +771,14 @@ private constructor(
       }
 
       is HttpContent -> {
-        // Message queued for later, no release needed
-        // or is immediately written and claimed by netty, no release needed
-        queueOrDeliverOutboundMessage(msg)
+        if (isAnsweredLocally) {
+          // Already answered, the rest of this request (a body) is for nobody
+          ReferenceCountUtil.release(msg)
+        } else {
+          // Message queued for later, no release needed
+          // or is immediately written and claimed by netty, no release needed
+          queueOrDeliverOutboundMessage(msg)
+        }
       }
 
       else -> {
@@ -589,6 +803,12 @@ private constructor(
 
     private const val HTTP_PREFIX = "http://"
     private const val HTTPS_PREFIX = "https://"
+
+    private const val HEADER_NO_SNIFF = "X-Content-Type-Options"
+    private const val HEADER_REFERRER_POLICY = "Referrer-Policy"
+    private const val CONTENT_TYPE_HTML = "text/html"
+    private const val SELF_SERVE_HTML_POLICY =
+        "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'"
 
     @JvmStatic
     @CheckResult
@@ -845,6 +1065,9 @@ private constructor(
         blockedClients: BlockedClients,
         tcpSocketCreator: ChannelCreator,
         serverSocketTimeout: ServerSocketTimeout,
+        selfServe: SelfServeResponder,
+        isHttpProxyEnabled: Boolean,
+        isSocksEnabled: Boolean,
         dispatchers: AppDispatchers,
     ): HandlerFactory<Unit> {
       return {
@@ -855,6 +1078,9 @@ private constructor(
             blockedClients = blockedClients,
             tcpSocketCreator = tcpSocketCreator,
             serverSocketTimeout = serverSocketTimeout,
+            selfServe = selfServe,
+            isHttpProxyEnabled = isHttpProxyEnabled,
+            isSocksEnabled = isSocksEnabled,
             dispatchers = dispatchers,
         )
       }

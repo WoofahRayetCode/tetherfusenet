@@ -1,0 +1,63 @@
+{
+  "log": {
+    "level": "warn"
+  },
+  "dns": {
+    "servers": [
+      {
+        "type": "tcp",
+        "tag": "tfn-dns",
+        "server": "1.1.1.1",
+        "detour": "tfn"
+      }
+    ],
+    "final": "tfn-dns",
+    "strategy": "ipv4_only"
+  },
+  "inbounds": [
+    {
+      "type": "tun",
+      "tag": "tun-in",
+      "address": ["172.19.0.1/30", "fdfe:dcba:9876::1/126"],
+      "mtu": 1400,
+      "auto_route": true,
+      "strict_route": true,
+      "auto_redirect": false
+    }
+  ],
+  "outbounds": [
+    {
+      "type": "socks",
+      "tag": "tfn",
+      "server": "@@HOST@@",
+      "server_port": @@PORT@@,
+      "version": "5",
+      @@SOCKS_NETWORK@@
+      "bind_interface": ""
+    },
+    {
+      "type": "direct",
+      "tag": "direct"
+    }
+  ],
+  "route": {
+    "auto_detect_interface": true,
+    "rules": [
+      {
+        "port": 53,
+        "action": "hijack-dns"
+      },
+      {
+        "ip_is_private": true,
+        "action": "route",
+        "outbound": "direct"
+      },
+      @@UDP_REJECT_RULE@@
+      {
+        "ip_version": 6,
+        "action": "reject"
+      }
+    ],
+    "final": "tfn"
+  }
+}

@@ -23,9 +23,11 @@ import com.pyamsoft.tetherfi.server.clients.AllowedClients
 import com.pyamsoft.tetherfi.server.clients.BlockedClients
 import com.pyamsoft.tetherfi.server.clients.ClientResolver
 import com.pyamsoft.tetherfi.server.proxy.SocketTagger
+import com.pyamsoft.tetherfi.server.proxy.session.netty.handler.selfserve.SelfServeResponder
 
 /** Run this with a completely new [com.pyamsoft.tetherfi.server.proxy.manager.ProxyManager] */
-class SuspendingNettyDelegatingProxy(
+class SuspendingNettyDelegatingProxy
+internal constructor(
     isDebug: Boolean,
     host: String,
     port: Int,
@@ -38,6 +40,7 @@ class SuspendingNettyDelegatingProxy(
     isSocksEnabled: Boolean,
     dispatchers: AppDispatchers,
     serverSocketTimeout: ServerSocketTimeout,
+    selfServe: SelfServeResponder,
     onOpened: () -> Unit,
     onClosing: () -> Unit,
     onClosed: () -> Unit,
@@ -57,6 +60,7 @@ class SuspendingNettyDelegatingProxy(
         isHttpEnabled = isHttpEnabled,
         isSocksEnabled = isSocksEnabled,
         serverSocketTimeout = serverSocketTimeout,
+        selfServe = selfServe,
         dispatchers = dispatchers,
         onOpened = onOpened,
         onClosing = onClosing,

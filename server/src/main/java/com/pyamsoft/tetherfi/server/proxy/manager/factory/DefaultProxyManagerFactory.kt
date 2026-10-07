@@ -16,6 +16,9 @@
 
 package com.pyamsoft.tetherfi.server.proxy.manager.factory
 
+import android.content.Context
+import android.content.pm.PackageManager
+import android.os.Build
 import androidx.annotation.CheckResult
 import com.pyamsoft.pydroid.core.ThreadEnforcer
 import com.pyamsoft.pydroid.util.AppDispatchers
@@ -31,6 +34,7 @@ import com.pyamsoft.tetherfi.server.proxy.SharedProxy
 import com.pyamsoft.tetherfi.server.proxy.SocketTagger
 import com.pyamsoft.tetherfi.server.proxy.manager.ProxyManager
 import com.pyamsoft.tetherfi.server.proxy.manager.netty.NettyDelegatingProxyManager
+import com.pyamsoft.tetherfi.server.proxy.session.netty.handler.selfserve.DefaultSelfServeResponder
 import javax.inject.Inject
 import javax.inject.Named
 import kotlinx.coroutines.flow.first
@@ -48,7 +52,25 @@ internal constructor(
     private val clientResolver: ClientResolver,
     private val allowedClients: AllowedClients,
     private val dispatchers: AppDispatchers,
+    private val context: Context,
 ) : ProxyManager.Factory {
+
+  private val selfServe by lazy { DefaultSelfServeResponder(appVersion = resolveAppVersion()) }
+
+  @CheckResult
+  private fun resolveAppVersion(): String = runCatching {
+    val manager = context.packageManager
+    val name = context.packageName
+    val info =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+          manager.getPackageInfo(name, PackageManager.PackageInfoFlags.of(0))
+        } else {
+          @Suppress("DEPRECATION") manager.getPackageInfo(name, 0)
+        }
+    info.versionName
+  }
+      .getOrNull()
+      .orEmpty()
 
   @CheckResult
   private suspend fun createNetty(
@@ -73,6 +95,7 @@ internal constructor(
         isHttpEnabled = isHttpEnabled,
         isSocksEnabled = isSocksEnabled,
         serverSocketTimeout = socketTimeout,
+        selfServe = selfServe,
         hostConnection = info,
         port = port,
     )

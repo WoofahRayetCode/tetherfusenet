@@ -27,6 +27,7 @@ import com.pyamsoft.tetherfi.server.network.SocketBinder
 import com.pyamsoft.tetherfi.server.proxy.SocketTagger
 import com.pyamsoft.tetherfi.server.proxy.session.netty.SuspendingNettyDelegatingProxy
 import com.pyamsoft.tetherfi.server.proxy.session.netty.SuspendingNettyProxy
+import com.pyamsoft.tetherfi.server.proxy.session.netty.handler.selfserve.SelfServeResponder
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
@@ -43,6 +44,7 @@ internal constructor(
     private val isHttpEnabled: Boolean,
     private val isSocksEnabled: Boolean,
     private val serverSocketTimeout: ServerSocketTimeout,
+    private val selfServe: SelfServeResponder,
     private val dispatchers: AppDispatchers,
 ) :
     NettyProxyManager(
@@ -70,6 +72,7 @@ internal constructor(
         isSocksEnabled = isSocksEnabled,
         dispatchers = dispatchers,
         serverSocketTimeout = serverSocketTimeout,
+        selfServe = selfServe,
         androidPreferredNetwork = network,
         onOpened = { launch { onOpened() } },
         onClosing = { launch { onClosing() } },

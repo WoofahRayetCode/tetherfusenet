@@ -36,6 +36,7 @@ import io.netty.util.ReferenceCountUtil
 import io.netty.util.ReferenceCounted
 import java.net.Inet4Address
 import java.net.Inet6Address
+import java.net.InetAddress
 import java.net.InetSocketAddress
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
@@ -43,6 +44,12 @@ import kotlinx.coroutines.launch
 object UDP {
 
   private val VALID_PORT_RANGE = 1..65535
+
+  // 2 reserve bytes, 1 fragment byte, 1 address type byte
+  private const val HEADER_FIXED_SIZE = 4
+
+  // The destination port at the end of the header
+  private const val HEADER_PORT_SIZE = 2
 
   // An arbitrary amount of leading header space
   // 2 reserve bytes
@@ -146,6 +153,13 @@ object UDP {
       return
     }
 
+    // Anyone that can reach this port can send anything, a short packet is just dropped
+    if (buf.readableBytes() < HEADER_FIXED_SIZE) {
+      Timber.w { "(${channelId}) DROP: Packet is too short to be a SOCKS5 UDP packet" }
+      onError(msg)
+      return
+    }
+
     val reservedByteOne = buf.readByte()
     if (reservedByteOne != RESERVED_BYTE) {
       Timber.w { "(${channelId}) DROP: Expected reserve byte one, but got data: $reservedByteOne" }
@@ -171,16 +185,22 @@ object UDP {
     val addrType = Socks5AddressType.valueOf(addressTypeByte)
     val destinationAddr = readAddress(channelId, buf, addrType)
 
-    // A short max is 32767 but ports can go up to 65k
-    // Sometimes the short value is negative, in that case, we
-    // "fix" it by converting back to an unsigned number
-    val destinationPort = buf.readUnsignedShort()
-
     if (destinationAddr.isBlank()) {
       Timber.w { "(${channelId}) DROP: Invalid upstream destination address: $destinationAddr" }
       onError(msg)
       return
     }
+
+    if (buf.readableBytes() < HEADER_PORT_SIZE) {
+      Timber.w { "(${channelId}) DROP: Packet ends before the destination port" }
+      onError(msg)
+      return
+    }
+
+    // A short max is 32767 but ports can go up to 65k
+    // Sometimes the short value is negative, in that case, we
+    // "fix" it by converting back to an unsigned number
+    val destinationPort = buf.readUnsignedShort()
 
     if (destinationPort !in VALID_PORT_RANGE) {
       Timber.w { "(${channelId}) DROP: Invalid upstream destination port: $destinationPort" }
@@ -202,6 +222,24 @@ object UDP {
         Timber.e(e) { "Failed to unwrap UDP data" }
         onError(retainedData)
       }
+    }
+
+    // An address that is already an IP address has nothing to resolve. Doing it right here, in
+    // order,
+    // is faster and keeps datagrams of a flow in the order they were sent, which a hop through
+    // another thread does not.
+    if (addrType == Socks5AddressType.IPv4 || addrType == Socks5AddressType.IPv6) {
+      val literal =
+          try {
+            InetSocketAddress(InetAddress.getByName(destinationAddr), destinationPort)
+          } catch (@LintIgnoreTooGenericExceptionCaught e: Throwable) {
+            Timber.e(e) { "(${channelId}) DROP: Could not make an address from $destinationAddr" }
+            onError(retainedData)
+            return
+          }
+
+      handleUdpUnwrapped(literal)
+      return
     }
 
     // Branch off to IO

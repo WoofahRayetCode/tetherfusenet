@@ -107,7 +107,9 @@ private constructor(
         dispatchers = dispatchers,
         ctx = ctx,
         msg = msg,
-        onError = { sendErrorAndClose(ctx, it) },
+        // Anyone that can reach this port can send anything. A datagram that cannot be used is
+        // dropped, it is not a reason to end the association for the client that owns it.
+        onError = { ReferenceCountUtil.release(it) },
         onUnwrapped = { retainedData, destination ->
           val tag = "UDP-RELAY-${destination.address}:${destination.port}"
 
@@ -192,17 +194,20 @@ private constructor(
       sender: InetSocketAddress,
       tcpControlClient: InetSocketAddress,
   ) {
-    setBackToClientAddress(ctx, sender)
-
     // Validate that the IP ADDRESS of the client and sender are the same
+    //
+    // Somebody else sending to this port is ignored. They must not be able to end the association,
+    // and above all they must not become the place the answers are sent: that is only decided
+    // after the sender has been checked.
     if (tcpControlClient.address != sender.address) {
       Timber.w {
         "(${channelId}) DROP: Sender did not match expected=${tcpControlClient.address} sender=${sender.address}"
       }
-      sendErrorAndClose(ctx, msg)
+      ReferenceCountUtil.release(msg)
       return
     }
 
+    setBackToClientAddress(ctx, sender)
     unwrapUdpResponse(ctx, channelId, msg, sender)
   }
 

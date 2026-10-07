@@ -29,6 +29,14 @@ adb install -r app/build/outputs/apk/fdroid/debug/app-fdroid-debug.apk
 
 It installs as **TetherFuseNet (DEV)** next to any normal TetherFuseNet and does not replace it.
 
+If `adb install` says `INSTALL_FAILED_USER_RESTRICTED` (Xiaomi, HyperOS and some other phones), turn on
+**Install via USB** in the phone's Developer options and run it again. Or copy the APK across and open it
+from the phone's Files app:
+
+```sh
+adb push app/build/outputs/apk/fdroid/debug/app-fdroid-debug.apk /sdcard/Download/
+```
+
 ### 2. Set up the phone (once)
 
 1. Open the app and accept its permission prompts. Wi-Fi must be on. Turn Location on if the app asks.

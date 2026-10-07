@@ -16,6 +16,7 @@
 
 package com.pyamsoft.tetherfi.info
 
+import androidx.compose.runtime.saveable.SaveableStateRegistry
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import org.junit.Test
@@ -54,6 +55,59 @@ class InfoViewModelerTest {
 
     assertTrue(state.showSocksOptions.value)
     assertFalse(state.showHttpOptions.value)
+    assertFalse(state.showComputerOptions.value)
+  }
+
+  @Test
+  fun `handleToggleOptions COMPUTER flips only the computer flag`() {
+    val state = MutableInfoViewState()
+    val viewModeler = InfoViewModeler(state = state)
+
+    viewModeler.handleToggleOptions(InfoViewOptionsType.COMPUTER)
+    assertTrue(state.showComputerOptions.value)
+    assertFalse(state.showHttpOptions.value)
+    assertFalse(state.showSocksOptions.value)
+
+    viewModeler.handleToggleOptions(InfoViewOptionsType.COMPUTER)
+    assertFalse(state.showComputerOptions.value)
+  }
+
+  @Test
+  fun `every option survives being saved and restored`() {
+    val state =
+        MutableInfoViewState().apply {
+          showHttpOptions.value = true
+          showSocksOptions.value = true
+          showComputerOptions.value = true
+        }
+
+    val saving = SaveableStateRegistry(restoredValues = null, canBeSaved = { true })
+    InfoViewModeler(state = state).registerSaveState(saving)
+    val saved = saving.performSave()
+
+    val restoredState = MutableInfoViewState()
+    val restoring = SaveableStateRegistry(restoredValues = saved, canBeSaved = { true })
+    InfoViewModeler(state = restoredState).consumeRestoredState(restoring)
+
+    assertTrue(restoredState.showHttpOptions.value)
+    assertTrue(restoredState.showSocksOptions.value)
+    assertTrue(restoredState.showComputerOptions.value)
+  }
+
+  @Test
+  fun `an option that was closed stays closed after being restored`() {
+    val state = MutableInfoViewState().apply { showHttpOptions.value = true }
+
+    val saving = SaveableStateRegistry(restoredValues = null, canBeSaved = { true })
+    InfoViewModeler(state = state).registerSaveState(saving)
+
+    val restoredState = MutableInfoViewState()
+    val restoring =
+        SaveableStateRegistry(restoredValues = saving.performSave(), canBeSaved = { true })
+    InfoViewModeler(state = restoredState).consumeRestoredState(restoring)
+
+    assertTrue(restoredState.showHttpOptions.value)
+    assertFalse(restoredState.showComputerOptions.value)
   }
 
   @Test

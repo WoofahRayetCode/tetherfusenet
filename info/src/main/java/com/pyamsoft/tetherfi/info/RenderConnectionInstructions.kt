@@ -26,6 +26,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import com.pyamsoft.pydroid.theme.keylines
 import com.pyamsoft.tetherfi.info.sections.renderAppSetup
+import com.pyamsoft.tetherfi.info.sections.renderComputerSetup
 import com.pyamsoft.tetherfi.info.sections.renderConnectionComplete
 import com.pyamsoft.tetherfi.info.sections.renderDeviceIdentifiers
 import com.pyamsoft.tetherfi.info.sections.renderDeviceSetup
@@ -89,6 +90,22 @@ internal fun LazyListScope.renderConnectionInstructions(
       serverViewState = serverViewState,
       onTogglePasswordVisibility = onTogglePasswordVisibility,
       onShowQRCode = onShowQRCode,
+      onToggleShowOptions = onToggleShowOptions,
+  )
+
+  item(
+      contentType = ConnectionInstructionContentTypes.SPACER,
+  ) {
+    Spacer(
+        modifier = Modifier.height(MaterialTheme.keylines.baseline),
+    )
+  }
+
+  renderComputerSetup(
+      itemModifier = itemModifier,
+      appName = appName,
+      state = state,
+      serverViewState = serverViewState,
       onToggleShowOptions = onToggleShowOptions,
   )
 

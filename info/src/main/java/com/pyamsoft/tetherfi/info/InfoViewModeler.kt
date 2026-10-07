@@ -39,6 +39,10 @@ internal constructor(
         registry
             .registerProvider(KEY_SHOW_SOCKS_OPTIONS) { state.showSocksOptions.value }
             .also { add(it) }
+
+        registry
+            .registerProvider(KEY_SHOW_COMPUTER_OPTIONS) { state.showComputerOptions.value }
+            .also { add(it) }
       }
 
   override fun consumeRestoredState(registry: SaveableStateRegistry) {
@@ -48,6 +52,10 @@ internal constructor(
 
     registry.consumeRestored(KEY_SHOW_SOCKS_OPTIONS)?.cast<Boolean>()?.also {
       state.showSocksOptions.value = it
+    }
+
+    registry.consumeRestored(KEY_SHOW_COMPUTER_OPTIONS)?.cast<Boolean>()?.also {
+      state.showComputerOptions.value = it
     }
   }
 
@@ -64,11 +72,16 @@ internal constructor(
         InfoViewOptionsType.SOCKS -> {
           state.showSocksOptions.update { !it }
         }
+
+        InfoViewOptionsType.COMPUTER -> {
+          state.showComputerOptions.update { !it }
+        }
       }
 
   companion object {
 
     private const val KEY_SHOW_HTTP_OPTIONS = "show_http_options"
     private const val KEY_SHOW_SOCKS_OPTIONS = "show_socks_options"
+    private const val KEY_SHOW_COMPUTER_OPTIONS = "show_computer_options"
   }
 }

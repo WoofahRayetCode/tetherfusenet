@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!--
+  ~ Copyright 2026 pyamsoft
+  ~
+  ~ Licensed under the Apache License, Version 2.0 (the "License");
+  ~ you may not use this file except in compliance with the License.
+  ~ You may obtain a copy of the License at:
+  ~
+  ~     http://www.apache.org/licenses/LICENSE-2.0
+  ~
+  ~ Unless required by applicable law or agreed to in writing, software
+  ~ distributed under the License is distributed on an "AS IS" BASIS,
+  ~ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  ~ See the License for the specific language governing permissions and
+  ~ limitations under the License.
+  -->
+<resources>
+  <!-- TODO(Peter): Need zh-rTW translation -->
+  <string
+    name="view_computer_options"
+  >Or connect the whole computer, with no proxy settings</string>
+
+  <string
+    name="computer_explain"
+  >Every application on the computer, DNS and UDP included, goes through this device, and through this device\'s VPN if it has one. The computer needs sing-box (free, installed once) and one command.</string>
+
+  <string
+    name="computer_open_address"
+  >On the computer, open this address in a web browser. It shows the exact command for Linux, macOS or Windows:</string>
+
+  <string
+    name="computer_not_running"
+  >Start the %1$s Hotspot to see the address.</string>
+
+  <string
+    name="computer_socks_off"
+  >SOCKS is turned off, and this needs it. With the Hotspot stopped, turn on the SOCKS4A/SOCKS5H Proxy switch under Proxy Mode in the Hotspot tab, then start the Hotspot.</string>
+
+  <string
+    name="computer_timeout_hint"
+  >Idle connections such as SSH are closed after the Socket Timeout. In the Behavior tab, use Adjust Socket Timeout to set 5 minutes or No Timeout.</string>
+
+  <string
+    name="computer_vpn_hint"
+  >To share this device\'s VPN, the VPN must allow local network access, and %1$s must not be excluded from it.</string>
+</resources>
